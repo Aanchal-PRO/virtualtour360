@@ -6,7 +6,7 @@ const panoramas = [
   {
     id: 'scene1',
     image: './src/assets/7-7.0001.webp', // PLACE your real panorama here (or import)
-    mask: './src/assets/7-7.0001_Masks.png',
+    mask: './src/assets/7-7.0001_Masks.webp',
     map: {
       // map "r,g,b" -> building metadata
       // Example values; replace with colors from your mask.
@@ -17,7 +17,7 @@ const panoramas = [
   },
   {
     id: 'scene2',
-    image: './src/assets/7-1.0001.png',
+    image: './src/assets/7-1.0001.webp',
     mask: '',
     map: {
       '10,20,30': { name: 'Other', nextPanorama: 'scene1' },
@@ -25,7 +25,7 @@ const panoramas = [
   },
   {
     id: 'scene3',
-    image: './src/assets/7-5.0001.png',
+    image: './src/assets/7-5.0001.webp',
     mask: '',
     map: {
       '10,20,30': { name: 'Other', nextPanorama: 'scene1' },
