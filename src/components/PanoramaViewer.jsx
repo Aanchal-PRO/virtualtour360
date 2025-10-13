@@ -71,14 +71,13 @@ useEffect(() => {
     overlayCanvas.height = maskImg.height;
     overlayCtx.drawImage(maskImg, 0, 0);
 
-    // Apply semi-transparent tint (light blue example)
     const imageData = overlayCtx.getImageData(0, 0, overlayCanvas.width, overlayCanvas.height);
     for (let i = 0; i < imageData.data.length; i += 4) {
-      // Keep original mask color but add light blue tint
-      imageData.data[i] = imageData.data[i] * 0.5 + 135;     // R
-      imageData.data[i + 1] = imageData.data[i + 1] * 0.5 + 206; // G
-      imageData.data[i + 2] = imageData.data[i + 2] * 0.5 + 250; // B
-      imageData.data[i + 3] = 128; // 50% opacity
+
+      imageData.data[i] = imageData.data[i] * 0.5 + 135;     
+      imageData.data[i + 1] = imageData.data[i + 1] * 0.5 + 206;
+      imageData.data[i + 2] = imageData.data[i + 2] * 0.5 + 250; 
+      imageData.data[i + 3] = 128;
     }
     overlayCtx.putImageData(imageData, 0, 0);
 
