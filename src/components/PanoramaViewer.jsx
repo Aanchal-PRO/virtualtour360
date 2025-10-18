@@ -8,7 +8,7 @@ export default function PanoramaViewer({ panoramas }) {
   const [history, setHistory] = useState([]);
   const textureCache = useRef({});
 
-  // Preload all panoramas for fast switching
+
   useEffect(() => {
     const loader = new THREE.TextureLoader();
     panoramas.forEach((p) => {
@@ -35,7 +35,6 @@ export default function PanoramaViewer({ panoramas }) {
     renderer.setPixelRatio(window.devicePixelRatio);
     container.appendChild(renderer.domElement);
 
-    // Load panorama texture (from cache if available)
     const loader = new THREE.TextureLoader();
     const panoTexture =
       textureCache.current[currentScene.image] ||
@@ -48,20 +47,20 @@ export default function PanoramaViewer({ panoramas }) {
     const panoMesh = new THREE.Mesh(geometry, material);
     scene.add(panoMesh);
 
-    // Controls
+
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableZoom = false;
     controls.enablePan = false;
     controls.rotateSpeed = -0.3;
     camera.position.set(0.6, 0.3, 0.1);
 
-    // Raycasting setup
+
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
     const clickable = [];
     let hoveredObject = null;
 
-    // Helper to position SVG markers
+
     const updatePlanePosition = (plane, b) => {
       const phi = THREE.MathUtils.degToRad(90 - b.latitude);
       const theta = THREE.MathUtils.degToRad(b.longitude);
@@ -81,7 +80,6 @@ export default function PanoramaViewer({ panoramas }) {
       plane.geometry = new THREE.PlaneGeometry(width, height);
     };
 
-    // Add SVG markers
     currentScene.buildings.forEach((b) => {
       loader.load(
         b.svg,
@@ -103,7 +101,6 @@ export default function PanoramaViewer({ panoramas }) {
       );
     });
 
-    // Hover animation
     const onMouseMove = (e) => {
       const rect = renderer.domElement.getBoundingClientRect();
       mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -124,7 +121,6 @@ export default function PanoramaViewer({ panoramas }) {
     };
     renderer.domElement.addEventListener("mousemove", onMouseMove);
 
-    // Click to switch panorama instantly
     const onClick = (event) => {
       const rect = renderer.domElement.getBoundingClientRect();
       mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -140,7 +136,7 @@ export default function PanoramaViewer({ panoramas }) {
       if (!next) return;
 
       setHistory((prev) => [...prev, currentScene]);
-      setCurrentScene(next); // Instant switch
+      setCurrentScene(next); 
     };
     renderer.domElement.addEventListener("click", onClick);
 
