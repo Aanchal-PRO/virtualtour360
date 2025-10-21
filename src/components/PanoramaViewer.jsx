@@ -7,8 +7,15 @@ export default function PanoramaViewer({ panoramas }) {
   const [currentScene, setCurrentScene] = useState(panoramas[0]);
   const [history, setHistory] = useState([]);
   const textureCache = useRef({});
+  const fadeDuration = 1000; // 🔥 1 second fade duration
+const materialRef = useRef(null);
+const sceneRef = useRef(null);
+const cameraRef = useRef(null);
+const rendererRef = useRef(null);
+const clickableRef = useRef([]);
+const loaderRef = useRef(null);
 
-
+  // Preload all panoramas
   useEffect(() => {
     const loader = new THREE.TextureLoader();
     panoramas.forEach((p) => {
@@ -17,6 +24,63 @@ export default function PanoramaViewer({ panoramas }) {
       }
     });
   }, [panoramas]);
+
+  // ⬆️ Place this outside of useEffect (within component scope)
+const switchPanoramaWithFade = ({
+  next,
+  material,
+  loader,
+  clickable,
+  scene,
+  camera,
+  renderer,
+  setCurrentScene,
+}) => {
+  if (!next || !next.image) {
+    console.error("Invalid 'next' panorama passed to switchPanoramaWithFade:", next);
+    return;
+  }
+
+  const start = performance.now();
+
+  const fadeOut = (time) => {
+    const progress = (time - start) / fadeDuration;
+    material.opacity = Math.max(1 - progress, 0);
+    clickable.forEach(plane => {
+      if (plane.material) {
+        plane.material.opacity = Math.max(1 - progress, 0);
+      }
+    });
+
+    renderer.render(scene, camera);
+
+    if (progress < 1) {
+      requestAnimationFrame(fadeOut);
+    } else {
+      // Load next texture
+      const nextTexture =
+        textureCache.current[next.image] || loader.load(next.image);
+      nextTexture.colorSpace = THREE.SRGBColorSpace;
+
+      // Set new texture
+      material.map = nextTexture;
+      setCurrentScene(next); // 🔁 MOVE THIS BEFORE fade-in to trigger re-render or updates
+
+      const fadeInStart = performance.now();
+      const fadeIn = (t) => {
+        const prog = (t - fadeInStart) / fadeDuration;
+        material.opacity = Math.min(prog, 1);
+        renderer.render(scene, camera);
+        if (prog < 1) requestAnimationFrame(fadeIn);
+      };
+      requestAnimationFrame(fadeIn);
+    }
+  };
+
+  requestAnimationFrame(fadeOut);
+};
+
+
 
   useEffect(() => {
     const container = containerRef.current;
@@ -31,22 +95,39 @@ export default function PanoramaViewer({ panoramas }) {
     );
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setClearColor(0x000000, 0);
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     container.appendChild(renderer.domElement);
 
+    // Load texture (from cache if available)
     const loader = new THREE.TextureLoader();
+    loaderRef.current = loader;
     const panoTexture =
       textureCache.current[currentScene.image] ||
       loader.load(currentScene.image);
     panoTexture.colorSpace = THREE.SRGBColorSpace;
 
+    // Create main panorama mesh
     const geometry = new THREE.SphereGeometry(500, 40, 30);
     geometry.scale(-1, 1, 1);
-    const material = new THREE.MeshBasicMaterial({ map: panoTexture });
+    const material = new THREE.MeshBasicMaterial({
+      map: panoTexture,
+      transparent: true,
+      opacity: 1,
+      depthWrite: false,   // prevent hiding overlays
+    });
+
+    materialRef.current = material;
+sceneRef.current = scene;
+cameraRef.current = camera;
+rendererRef.current = renderer;
+
     const panoMesh = new THREE.Mesh(geometry, material);
     scene.add(panoMesh);
 
+    // 🔥 Store reference for fade transition
+    let fadeMesh = null;
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableZoom = false;
@@ -54,12 +135,12 @@ export default function PanoramaViewer({ panoramas }) {
     controls.rotateSpeed = -0.3;
     camera.position.set(0.6, 0.3, 0.1);
 
-
+    // Raycasting
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
     const clickable = [];
     let hoveredObject = null;
-
+clickableRef.current = clickable;
 
     const updatePlanePosition = (plane, b) => {
       const phi = THREE.MathUtils.degToRad(90 - b.latitude);
@@ -80,17 +161,28 @@ export default function PanoramaViewer({ panoramas }) {
       plane.geometry = new THREE.PlaneGeometry(width, height);
     };
 
+    // Add SVG markers
     currentScene.buildings.forEach((b) => {
       loader.load(
         b.svg,
         (svgTexture) => {
           svgTexture.colorSpace = THREE.SRGBColorSpace;
+          svgTexture.needsUpdate = true;
+          svgTexture.generateMipmaps = true;
+
+       
           const mat = new THREE.MeshBasicMaterial({
             map: svgTexture,
             transparent: true,
             side: THREE.DoubleSide,
+            depthWrite: false,      
+            alphaTest: 0.01,       
           });
+
+
+
           const plane = new THREE.Mesh(new THREE.PlaneGeometry(50, 50), mat);
+          plane.renderOrder = 1;
           updatePlanePosition(plane, b);
           plane.userData = { nextPanorama: b.nextPanorama };
           scene.add(plane);
@@ -101,6 +193,8 @@ export default function PanoramaViewer({ panoramas }) {
       );
     });
 
+
+    // Hover animation
     const onMouseMove = (e) => {
       const rect = renderer.domElement.getBoundingClientRect();
       mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -135,12 +229,22 @@ export default function PanoramaViewer({ panoramas }) {
       );
       if (!next) return;
 
-      setHistory((prev) => [...prev, currentScene]);
-      setCurrentScene(next); 
-    };
+switchPanoramaWithFade({
+  next,
+  material: materialRef.current,
+  loader: loaderRef.current,
+  clickable: clickableRef.current,
+  scene: sceneRef.current,
+  camera: cameraRef.current,
+  renderer: rendererRef.current,
+  setCurrentScene,
+});
+
+
+     setHistory(prev => [...prev, currentScene]);
+    }
     renderer.domElement.addEventListener("click", onClick);
 
-    // Animation loop
     const animate = () => {
       controls.update();
       renderer.render(scene, camera);
@@ -148,7 +252,6 @@ export default function PanoramaViewer({ panoramas }) {
     };
     animate();
 
-    // Handle resize
     const handleResize = () => {
       camera.aspect = container.clientWidth / container.clientHeight;
       camera.updateProjectionMatrix();
@@ -165,13 +268,31 @@ export default function PanoramaViewer({ panoramas }) {
     };
   }, [currentScene]);
 
-  // Back button
-  const goBack = () => {
-    if (history.length === 0) return;
-    const prev = history[history.length - 1];
-    setHistory((h) => h.slice(0, -1));
-    setCurrentScene(prev);
-  };
+
+const goBack = () => {
+  if (history.length === 0) return;
+
+  const prev = history[history.length - 1];
+  if (!prev || !prev.image) {
+    console.error("Invalid panorama in history:", prev);
+    return;
+  }
+
+  setHistory((h) => h.slice(0, -1));
+
+  switchPanoramaWithFade({
+    next: prev,
+    material: materialRef.current,
+    loader: loaderRef.current,
+    clickable: clickableRef.current,
+    scene: sceneRef.current,
+    camera: cameraRef.current,
+    renderer: rendererRef.current,
+    setCurrentScene,
+  });
+};
+
+
 
   return (
     <div className="relative w-full h-full">
