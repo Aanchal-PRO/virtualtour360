@@ -40,7 +40,7 @@ const switchPanoramaWithFade = ({
     console.error("Invalid 'next' panorama passed to switchPanoramaWithFade:", next);
     return;
   }
-console.log("Updated animation");
+  console.log("Updated animation");
   const start = performance.now();
 
   const fadeOut = (time) => {
@@ -57,12 +57,11 @@ console.log("Updated animation");
     if (progress < 1) {
       requestAnimationFrame(fadeOut);
     } else {
-      // Load next texture
+
       const nextTexture =
         textureCache.current[next.image] || loader.load(next.image);
       nextTexture.colorSpace = THREE.SRGBColorSpace;
 
-      // Set new texture
       material.map = nextTexture;
       setCurrentScene(next); 
 
