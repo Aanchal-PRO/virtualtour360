@@ -25,7 +25,7 @@ const loaderRef = useRef(null);
     });
   }, [panoramas]);
 
-  // ⬆️ Place this outside of useEffect (within component scope)
+
 const switchPanoramaWithFade = ({
   next,
   material,
