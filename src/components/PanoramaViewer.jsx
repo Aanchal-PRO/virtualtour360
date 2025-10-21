@@ -40,7 +40,7 @@ const switchPanoramaWithFade = ({
     console.error("Invalid 'next' panorama passed to switchPanoramaWithFade:", next);
     return;
   }
-console.log("added animation");
+console.log("Updated animation");
   const start = performance.now();
 
   const fadeOut = (time) => {
