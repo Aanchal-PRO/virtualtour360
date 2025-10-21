@@ -64,7 +64,7 @@ console.log("added animation");
 
       // Set new texture
       material.map = nextTexture;
-      setCurrentScene(next); // 🔁 MOVE THIS BEFORE fade-in to trigger re-render or updates
+      setCurrentScene(next); 
 
       const fadeInStart = performance.now();
       const fadeIn = (t) => {
