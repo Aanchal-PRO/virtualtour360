@@ -1,17 +1,148 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import GUI from "lil-gui";
+import { useLoader } from "@react-three/fiber";
 
-export default function HighlightOverlay({ panoramas }) {
+export default function PanoramaViewer({ panoramas }) {
   const containerRef = useRef(null);
   const [currentScene, setCurrentScene] = useState(panoramas[0]);
+  const [history, setHistory] = useState([]);
+  const textureCache = useRef({});
+  const panoMeshRef = useRef();
+  const sceneRef = useRef();
+  const cameraRef = useRef();
+  const rendererRef = useRef();
+  const controlsRef = useRef();
+  const clickableRef = useRef([]);
+  const autorotateSpeed = 0.2;
+  const isMouseOver = useRef(false);
 
+  /** ✅ Preload all panoramas using useLoader (Fiber’s optimized caching) */
+  const preloadedTextures = useMemo(() => {
+    const loader = new THREE.TextureLoader();
+    const textures = {};
+    panoramas.forEach((p) => {
+      const tex = loader.load(p.image);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.minFilter = THREE.LinearMipmapLinearFilter;
+      tex.generateMipmaps = true;
+      tex.needsUpdate = true;
+      textures[p.image] = tex;
+    });
+    return textures;
+  }, [panoramas]);
+
+  /** ✅ Switch panorama */
+  const switchPanorama = async (nextScene) => {
+    if (!nextScene) return;
+
+    const texture = preloadedTextures[nextScene.image];
+    if (!texture) return;
+
+    // Smooth fade-out
+    let opacity = 1;
+    await new Promise((resolve) => {
+      const fade = () => {
+        opacity -= 0.05;
+        if (panoMeshRef.current) {
+          panoMeshRef.current.material.opacity = Math.max(opacity, 0);
+          panoMeshRef.current.material.needsUpdate = true;
+        }
+        clickableRef.current.forEach((m) => {
+          if (m.material)
+            m.material.opacity = Math.max(opacity, 0);
+        });
+        if (opacity <= 0) resolve();
+        else requestAnimationFrame(fade);
+      };
+      fade();
+    });
+
+    // Swap texture
+    panoMeshRef.current.material.map = texture;
+    panoMeshRef.current.material.needsUpdate = true;
+
+    clickableRef.current.forEach((m) => sceneRef.current.remove(m));
+    clickableRef.current = [];
+    buildHotspots(nextScene);
+
+    // Fade back in
+    opacity = 0;
+    await new Promise((resolve) => {
+      const fadeIn = () => {
+        opacity += 0.05;
+        if (panoMeshRef.current) {
+          panoMeshRef.current.material.opacity = Math.min(opacity, 1);
+          panoMeshRef.current.material.needsUpdate = true;
+        }
+        clickableRef.current.forEach((m) => {
+          if (m.material)
+            m.material.opacity = Math.min(opacity, 1);
+        });
+        if (opacity >= 1) resolve();
+        else requestAnimationFrame(fadeIn);
+      };
+      fadeIn();
+    });
+
+    setCurrentScene(nextScene);
+  };
+
+  /** ✅ Build Hotspots */
+  const buildHotspots = (sceneData) => {
+    const scene = sceneRef.current;
+    const loader = new THREE.TextureLoader();
+    const clickable = clickableRef.current;
+
+    clickable.forEach((obj) => scene.remove(obj));
+    clickable.length = 0;
+
+    sceneData.buildings.forEach((b) => {
+      loader.load(
+        b.svg,
+        (svgTexture) => {
+          svgTexture.colorSpace = THREE.SRGBColorSpace;
+          svgTexture.needsUpdate = true;
+
+          const mat = new THREE.MeshBasicMaterial({
+            map: svgTexture,
+            transparent: true,
+            opacity: 1,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+          });
+
+          const plane = new THREE.Mesh(new THREE.PlaneGeometry(50, 50), mat);
+          const phi = THREE.MathUtils.degToRad(90 - b.latitude);
+          const theta = THREE.MathUtils.degToRad(b.longitude);
+          plane.position.set(
+            b.radius * Math.sin(phi) * Math.cos(theta),
+            b.radius * Math.cos(phi),
+            b.radius * Math.sin(phi) * Math.sin(theta)
+          );
+          plane.lookAt(0, 0, 0);
+          plane.rotation.z = THREE.MathUtils.degToRad(b.rotation);
+
+          const aspect =
+            plane.material.map.image?.width / plane.material.map.image?.height ||
+            1;
+          plane.geometry.dispose();
+          plane.geometry = new THREE.PlaneGeometry(b.size * aspect, b.size);
+          plane.userData = { nextPanorama: b.nextPanorama };
+          scene.add(plane);
+          clickable.push(plane);
+        },
+        undefined,
+        (err) => console.error("Error loading SVG:", err)
+      );
+    });
+  };
+
+  /** ✅ Initialize Three.js Scene */
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    // Core setup
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(
       75,
@@ -20,183 +151,73 @@ export default function HighlightOverlay({ panoramas }) {
       1000
     );
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setClearColor(0x000000, 0);
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     container.appendChild(renderer.domElement);
 
-    // Panorama background
-    const loader = new THREE.TextureLoader();
-    const panoTexture = loader.load(currentScene.image);
-    panoTexture.colorSpace = THREE.SRGBColorSpace;
-    const panoGeometry = new THREE.SphereGeometry(500, 60, 40);
-    panoGeometry.scale(-1, 1, 1);
-    const panoMaterial = new THREE.MeshBasicMaterial({ map: panoTexture });
-    const panoMesh = new THREE.Mesh(panoGeometry, panoMaterial);
+    const geometry = new THREE.SphereGeometry(500, 60, 40);
+    geometry.scale(-1, 1, 1);
+
+    // ✅ Use fully loaded texture from cache
+    const initialTexture = preloadedTextures[currentScene.image];
+    initialTexture.needsUpdate = true;
+
+    const material = new THREE.MeshBasicMaterial({
+      map: initialTexture,
+      transparent: true,
+      opacity: 1, // ensure not faded
+      depthWrite: false,
+    });
+    const panoMesh = new THREE.Mesh(geometry, material);
     scene.add(panoMesh);
 
-    // Controls
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableZoom = false;
-    controls.enablePan = false;
+    controls.enableZoom = true;
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
     controls.rotateSpeed = -0.3;
+    controls.enablePan = false;
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = autorotateSpeed;
     camera.position.set(0.6, 0.3, 0.1);
 
-    // Interaction setup
+    sceneRef.current = scene;
+    cameraRef.current = camera;
+    rendererRef.current = renderer;
+    panoMeshRef.current = panoMesh;
+    controlsRef.current = controls;
+
+    buildHotspots(currentScene);
+
+    /** ✅ Mouse hover pause */
+    const handleMouseEnter = () => (isMouseOver.current = true);
+    const handleMouseLeave = () => (isMouseOver.current = false);
+    container.addEventListener("mouseenter", handleMouseEnter);
+    container.addEventListener("mouseleave", handleMouseLeave);
+
+    /** ✅ Click handling */
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
-    const clickable = [];
-    let hoveredObject = null;
 
-    // GUI setup
-    const gui = new GUI({ width: 320 });
-    const baseRadius = 470;
-
-    // === Helper Function to Position Plane ===
-    const updatePlanePosition = (plane, params) => {
-      const radius = params.radius;
-      const phi = THREE.MathUtils.degToRad(90 - params.latitude);
-      const theta = THREE.MathUtils.degToRad(params.longitude);
-
-      const x = radius * Math.sin(phi) * Math.cos(theta);
-      const y = radius * Math.cos(phi);
-      const z = radius * Math.sin(phi) * Math.sin(theta);
-      plane.position.set(x, y, z);
-
-      // Make plane face the camera
-      plane.lookAt(0, 0, 0);
-
-      // Apply rotation
-      plane.rotation.z = THREE.MathUtils.degToRad(params.rotation);
-
-      // Update plane size with aspect ratio
-      const aspect =
-        plane.material.map.image?.width / plane.material.map.image?.height || 1;
-      const distanceScale = radius / baseRadius;
-      const width = params.size * aspect * distanceScale;
-      const height = params.size * distanceScale;
-      plane.geometry.dispose();
-      plane.geometry = new THREE.PlaneGeometry(width, height);
-    };
-
-    // === Load and setup each building ===
-    currentScene.buildings.forEach((b, index) => {
-      loader.load(
-        b.svg,
-        (svgTexture) => {
-          svgTexture.colorSpace = THREE.SRGBColorSpace;
-
-          // Create plane
-          const planeMaterial = new THREE.MeshBasicMaterial({
-            map: svgTexture,
-            transparent: true,
-            opacity: 1.0,
-            side: THREE.DoubleSide,
-          });
-
-          const plane = new THREE.Mesh(
-            new THREE.PlaneGeometry(50, 50),
-            planeMaterial
-          );
-
-          // GUI parameters per building
-          const params = {
-            id: b.id,
-            latitude: b.latitude,
-            longitude: b.longitude,
-            size: 60,
-            rotation: 0,
-            radius: 470,
-            nextPanorama: b.nextPanorama,
-            save: () => {
-              console.log(`${b.id} values:`, {
-                latitude: params.latitude,
-                longitude: params.longitude,
-                size: params.size,
-                rotation: params.rotation,
-                radius: params.radius,
-              });
-            },
-          };
-
-          updatePlanePosition(plane, params);
-          plane.userData = { params };
-          scene.add(plane);
-          clickable.push(plane);
-
-          // === Add a GUI folder for this building ===
-          const folder = gui.addFolder(`🏠 ${b.id}`);
-          folder
-            .add(params, "latitude", -180, 180, 0.01)
-            .name("Latitude")
-            .onChange(() => updatePlanePosition(plane, params));
-          folder
-            .add(params, "longitude", -180, 180, 0.01)
-            .name("Longitude")
-            .onChange(() => updatePlanePosition(plane, params));
-          folder
-            .add(params, "radius", 100, 600, 1)
-            .name("Radius")
-            .onChange(() => updatePlanePosition(plane, params));
-          folder
-            .add(params, "size", 10, 200, 1)
-            .name("Size")
-            .onChange(() => updatePlanePosition(plane, params));
-          folder
-            .add(params, "rotation", -180, 180, 0.1)
-            .name("Rotation")
-            .onChange(() => updatePlanePosition(plane, params));
-          folder.add(params, "save").name("💾 Save");
-        },
-        undefined,
-        (err) => console.error("Error loading SVG:", err)
-      );
-    });
-
-    // Hover effect
-    const onMouseMove = (event) => {
-      const rect = renderer.domElement.getBoundingClientRect();
-      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-      raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects(clickable);
-      if (intersects.length > 0) {
-        const obj = intersects[0].object;
-        if (hoveredObject !== obj) {
-          if (hoveredObject) hoveredObject.material.opacity = 1.0;
-          hoveredObject = obj;
-          hoveredObject.material.opacity = 0.3;
-        }
-      } else {
-        if (hoveredObject) hoveredObject.material.opacity = 1.0;
-        hoveredObject = null;
-      }
-    };
-    renderer.domElement.addEventListener("mousemove", onMouseMove);
-
-    // Click navigation
     const onClick = (event) => {
       const rect = renderer.domElement.getBoundingClientRect();
       mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects(clickable);
-      if (intersects.length > 0) {
-        const next = intersects[0].object.userData.params.nextPanorama;
-        const nextScene = panoramas.find((p) => p.id === next);
-        if (nextScene) setCurrentScene(nextScene);
+      const intersects = raycaster.intersectObjects(clickableRef.current);
+      if (!intersects.length) return;
+      const next = panoramas.find(
+        (p) => p.id === intersects[0].object.userData.nextPanorama
+      );
+      if (next) {
+        setHistory((h) => [...h, currentScene]);
+        switchPanorama(next);
       }
     };
     renderer.domElement.addEventListener("click", onClick);
 
-    // Animate
-    const animate = () => {
-      controls.update();
-      renderer.render(scene, camera);
-      requestAnimationFrame(animate);
-    };
-    animate();
-
-    // Resize handling
+    /** ✅ Resize */
     const handleResize = () => {
       camera.aspect = container.clientWidth / container.clientHeight;
       camera.updateProjectionMatrix();
@@ -204,18 +225,44 @@ export default function HighlightOverlay({ panoramas }) {
     };
     window.addEventListener("resize", handleResize);
 
-    // Cleanup
+    /** ✅ Render loop */
+    const animate = () => {
+      if (!isMouseOver.current) controls.autoRotate = true;
+      controls.update();
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+    };
+    animate();
+
     return () => {
       window.removeEventListener("resize", handleResize);
       renderer.domElement.removeEventListener("click", onClick);
-      renderer.domElement.removeEventListener("mousemove", onMouseMove);
-      gui.destroy();
+      container.removeEventListener("mouseenter", handleMouseEnter);
+      container.removeEventListener("mouseleave", handleMouseLeave);
       renderer.dispose();
       container.removeChild(renderer.domElement);
     };
-  }, [currentScene]);
+  }, [preloadedTextures]);
+
+  /** ✅ Go Back */
+  const goBack = () => {
+    if (history.length === 0) return;
+    const prev = history[history.length - 1];
+    setHistory((h) => h.slice(0, -1));
+    switchPanorama(prev);
+  };
 
   return (
-    <div ref={containerRef} className="w-full h-full" style={{ background: "black" }} />
+    <div className="relative w-full h-full">
+      <div ref={containerRef} className="w-full h-full bg-black" />
+      {history.length > 0 && (
+        <button
+          onClick={goBack}
+          className="absolute top-4 left-4 z-10 px-4 py-2 bg-black/60 hover:bg-black/80 text-white rounded-lg backdrop-blur-md transition-all duration-300"
+        >
+          ← Back
+        </button>
+      )}
+    </div>
   );
 }
