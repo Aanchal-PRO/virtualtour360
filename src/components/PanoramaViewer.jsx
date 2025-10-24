@@ -357,7 +357,7 @@ const onWheel = (event) => {
 
   if (camera.fov) {
 
-    const zoomSpeed = 2.5;
+    const zoomSpeed = 8;
     camera.fov += event.deltaY * 0.01 * zoomSpeed;
     camera.fov = THREE.MathUtils.clamp(camera.fov, 30, 90); 
     camera.updateProjectionMatrix();
