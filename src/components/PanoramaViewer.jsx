@@ -140,8 +140,6 @@ export default function PanoramaViewer({ panoramas }) {
 const switchPanorama = async (nextScene) => {
   if (!nextScene || isTransitioningRef.current) return;
   isTransitioningRef.current = true;
-  // setIsLoading(true);
-  // setLoadingProgress(0);
 
   if (cameraRef.current) {
     cameraRef.current.position.set(0.6, 0.3, 0.1);
@@ -157,7 +155,6 @@ const switchPanorama = async (nextScene) => {
   if (!nextTexture) {
     if (controlsRef.current) controlsRef.current.enabled = true;
     isTransitioningRef.current = false;
-    // setIsLoading(false);
     return;
   }
 
@@ -168,9 +165,56 @@ const switchPanorama = async (nextScene) => {
   nextMesh.material.opacity = 0;
   nextMesh.material.needsUpdate = true;
 
+  // 🟣 Build next hotspots *before* transition — start invisible
+  const newHotspots = [];
+  const loader = loaderRef.current;
+  const scene = sceneRef.current;
+
+  if (nextScene.buildings?.length) {
+    nextScene.buildings.forEach((b) => {
+      loader.load(
+        b.svg,
+        (svgTexture) => {
+          svgTexture.colorSpace = THREE.SRGBColorSpace;
+          const mat = new THREE.MeshBasicMaterial({
+            map: svgTexture,
+            transparent: true,
+            opacity: 0, // start hidden
+            side: THREE.DoubleSide,
+            depthWrite: false,
+          });
+
+          const plane = new THREE.Mesh(new THREE.PlaneGeometry(50, 50), mat);
+          const phi = THREE.MathUtils.degToRad(90 - b.latitude);
+          const theta = THREE.MathUtils.degToRad(b.longitude);
+          plane.position.set(
+            b.radius * Math.sin(phi) * Math.cos(theta),
+            b.radius * Math.cos(phi),
+            b.radius * Math.sin(phi) * Math.sin(theta)
+          );
+          plane.lookAt(0, 0, 0);
+          plane.rotation.z = THREE.MathUtils.degToRad(b.rotation);
+
+          const aspect =
+            plane.material.map.image?.width /
+              plane.material.map.image?.height || 1;
+          plane.geometry.dispose();
+          plane.geometry = new THREE.PlaneGeometry(b.size * aspect, b.size);
+          plane.userData = { nextPanorama: b.nextPanorama };
+          plane.renderOrder = 1;
+
+          scene.add(plane);
+          newHotspots.push(plane);
+        },
+        undefined,
+        (err) => console.error("Error loading SVG:", err)
+      );
+    });
+  }
+
   const clickable = clickableRef.current;
   let opacity = 0;
-  const speed = 0.05;
+  const speed = 0.02;
 
   await new Promise((resolve) => {
     const animateFade = () => {
@@ -179,15 +223,16 @@ const switchPanorama = async (nextScene) => {
 
       nextMesh.material.opacity = opacity;
       currentMesh.material.opacity = 1 - opacity;
-      nextMesh.material.needsUpdate = true;
-      currentMesh.material.needsUpdate = true;
 
+      // 🟣 Fade out old hotspots + fade in new ones simultaneously
       clickable.forEach((obj) => {
         obj.material.opacity = 1 - opacity;
         obj.material.needsUpdate = true;
       });
-
-      // setLoadingProgress(opacity * 100);
+      newHotspots.forEach((obj) => {
+        obj.material.opacity = opacity;
+        obj.material.needsUpdate = true;
+      });
 
       if (opacity < 1) {
         requestAnimationFrame(animateFade);
@@ -198,9 +243,10 @@ const switchPanorama = async (nextScene) => {
     animateFade();
   });
 
-  clickable.forEach((obj) => sceneRef.current.remove(obj));
+  // 🟣 Cleanup and finalize
+  clickable.forEach((obj) => scene.remove(obj));
   clickable.length = 0;
-  buildHotspots(nextScene);
+  clickable.push(...newHotspots);
 
   setUsingMesh1(!usingMesh1);
   currentMesh.material.opacity = 0;
@@ -211,11 +257,8 @@ const switchPanorama = async (nextScene) => {
   if (controlsRef.current) {
     controlsRef.current.target.set(0, 0, 0);
     controlsRef.current.update();
-    controlsRef.current.enabled = true; 
+    controlsRef.current.enabled = true;
   }
-
-  // setLoadingProgress(100);
-  // setTimeout(() => setIsLoading(false), 500);
 
   clearTimeout(autorotateTimeoutRef.current);
   autorotateTimeoutRef.current = setTimeout(() => {
@@ -314,7 +357,7 @@ const onWheel = (event) => {
 
   if (camera.fov) {
 
-    const zoomSpeed = 1.5;
+    const zoomSpeed = 2.5;
     camera.fov += event.deltaY * 0.01 * zoomSpeed;
     camera.fov = THREE.MathUtils.clamp(camera.fov, 30, 90); 
     camera.updateProjectionMatrix();
