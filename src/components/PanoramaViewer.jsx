@@ -23,7 +23,7 @@ export default function PanoramaViewer({ panoramas }) {
   const isTransitioningRef = useRef(false);
   const [usingMesh1, setUsingMesh1] = useState(true);
 
-  const autorotateSpeed = 0.5;
+  const autorotateSpeed = 0.3;
   const autorotateTimeoutRef = useRef(null);
 
 
