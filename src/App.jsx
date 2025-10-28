@@ -9,7 +9,7 @@ const panoramas = [
       
       {
         id: 'house1',
-        svg: '/assets/svg/Vector-1.svg',
+        svg: 'b_847D73',
         nextPanorama: 'scene2',
         latitude: -54.4, 
         longitude: 162, 
@@ -20,7 +20,7 @@ const panoramas = [
       },
        {
         id: 'house2',
-        svg: '/assets/svg/vector-2.svg',
+        svg: 'b_778B5F',
         nextPanorama: 'scene4',
         latitude: -131.1,
         longitude: -29.79,
@@ -31,7 +31,7 @@ const panoramas = [
       },
       {
         id: 'house3',
-        svg: '/assets/svg/location.svg',
+        svg: 'b_465B3B',
         nextPanorama: 'scene3',
         latitude: -166.34, 
         longitude: -0.0999999999999943, 

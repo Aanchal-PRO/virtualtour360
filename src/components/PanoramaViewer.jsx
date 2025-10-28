@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-
+import { SVGLoader } from "three/examples/jsm/loaders/SVGLoader.js";
+import projectData from "../APIdata.json";
+import { GUI } from "lil-gui";
 export default function PanoramaViewer({ panoramas }) {
   const containerRef = useRef(null);
   const textureCache = useRef({});
@@ -86,55 +88,119 @@ export default function PanoramaViewer({ panoramas }) {
       }
     });
 
-  const buildHotspots = (sceneData) => {
-    const scene = sceneRef.current;
-    const clickable = clickableRef.current;
-    const loader = loaderRef.current;
+const buildHotspots = async (sceneData, unitsData = []) => {
+  const scene = sceneRef.current;
+  const clickable = clickableRef.current;
+  const svgLoader = new SVGLoader();
+
+  // Clear old clickable meshes
+  clickable.forEach((obj) => scene.remove(obj));
+  clickable.length = 0;
+
+  // Load the single combined SVG (already aligned in Figma)
+  const svgData = await new Promise((resolve, reject) => {
+    svgLoader.load(
+      "/assets/svg/mask.svg",
+      (data) => resolve(data),
+      undefined,
+      (err) => reject(err)
+    );
+  });
+
+  console.log("✅ Loaded SVG:", svgData);
+
+  // Group paths by <g id="...">
+  const allPaths = svgData.paths;
+  const groupedById = {};
+  allPaths.forEach((path) => {
+    const groupId = path.userData?.node?.parentNode?.id;
+    if (!groupId) return;
+    if (!groupedById[groupId]) groupedById[groupId] = [];
+    groupedById[groupId].push(path);
+  });
+
+  // Alignment parameters (will be controlled via lil-gui)
+  const controls = {
+    latitude: -41.2,
+    longitude: 144.6,
+    radius: 215,
+    rotation: 109.2,
+    scale: 0.36,
+  };
+
+  let group = new THREE.Group();
+  scene.add(group);
+
+  // Helper to rebuild the SVG group when parameters change
+  const rebuild = () => {
+    // Remove previous meshes
+    group.children.forEach((child) => group.remove(child));
+
+    const phi = THREE.MathUtils.degToRad(90 - controls.latitude);
+    const theta = THREE.MathUtils.degToRad(controls.longitude);
+    const position = new THREE.Vector3(
+      controls.radius * Math.sin(phi) * Math.cos(theta),
+      controls.radius * Math.cos(phi),
+      controls.radius * Math.sin(phi) * Math.sin(theta)
+    );
 
     sceneData.buildings.forEach((b) => {
-      loader.load(
-        b.svg,
-        (svgTexture) => {
-          svgTexture.colorSpace = THREE.SRGBColorSpace;
+      const unit = unitsData.find((u) => u.building_slug === b.svg);
+      if (!unit) return;
 
-          const mat = new THREE.MeshBasicMaterial({
-            map: svgTexture,
+      let fillColor = "#cccccc";
+      if (unit.status === 1) fillColor = "#4CAF50";
+      else if (unit.status === 2) fillColor = "#FFEB3B";
+      else if (unit.status === 3) fillColor = "#F44336";
+
+      const targetGroup = groupedById[b.svg];
+      if (!targetGroup) return;
+
+      targetGroup.forEach((path) => {
+        const shapes = SVGLoader.createShapes(path);
+        shapes.forEach((shape) => {
+          const geometry = new THREE.ShapeGeometry(shape);
+          const material = new THREE.MeshBasicMaterial({
+            color: new THREE.Color(fillColor),
             transparent: true,
-            opacity: 1,
+            opacity: 0.8,
             side: THREE.DoubleSide,
             depthWrite: false,
           });
 
-          const plane = new THREE.Mesh(new THREE.PlaneGeometry(50, 50), mat);
-          const phi = THREE.MathUtils.degToRad(90 - b.latitude);
-          const theta = THREE.MathUtils.degToRad(b.longitude);
+          const mesh = new THREE.Mesh(geometry, material);
+          mesh.scale.set(controls.scale, -controls.scale, controls.scale);
+          mesh.position.copy(position);
+          mesh.lookAt(0, 0, 0);
+          mesh.rotation.z = THREE.MathUtils.degToRad(controls.rotation);
+          mesh.renderOrder = 10;
+          mesh.userData = {
+            buildingSlug: b.svg,
+            nextPanorama: b.nextPanorama,
+            vr: unit.vr,
+          };
 
-          plane.position.set(
-            b.radius * Math.sin(phi) * Math.cos(theta),
-            b.radius * Math.cos(phi),
-            b.radius * Math.sin(phi) * Math.sin(theta)
-          );
-
-          plane.lookAt(0, 0, 0);
-          plane.rotation.z = THREE.MathUtils.degToRad(b.rotation);
-
-          const aspect =
-            plane.material.map.image?.width /
-              plane.material.map.image?.height || 1;
-          plane.geometry.dispose();
-          plane.geometry = new THREE.PlaneGeometry(b.size * aspect, b.size);
-
-          plane.userData = { nextPanorama: b.nextPanorama };
-          plane.renderOrder = 1;
-
-          scene.add(plane);
-          clickable.push(plane);
-        },
-        undefined,
-        (err) => console.error("Error loading SVG:", err)
-      );
+          clickable.push(mesh);
+          group.add(mesh);
+        });
+      });
     });
   };
+
+  rebuild();
+
+  // 🧭 lil-GUI controls for live alignment
+  const gui = new GUI({ title: "SVG Alignment Controls" });
+  gui.add(controls, "latitude", -180, 180, 0.1).onChange(rebuild);
+  gui.add(controls, "longitude", -180, 180, 0.1).onChange(rebuild);
+  gui.add(controls, "rotation", -180, 180, 0.1).onChange(rebuild);
+  gui.add(controls, "radius", 100, 1000, 1).onChange(rebuild);
+  gui.add(controls, "scale", 0.1, 5, 0.01).onChange(rebuild);
+
+  console.log("✅ Added lil-GUI controls for alignment");
+};
+
+
 
  
 const switchPanorama = async (nextScene) => {
@@ -328,7 +394,7 @@ const switchPanorama = async (nextScene) => {
     rendererRef.current = renderer;
     controlsRef.current = controls;
 
-    buildHotspots(currentScene);
+    buildHotspots(currentScene,projectData[0].units);
 
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
