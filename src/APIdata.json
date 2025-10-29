@@ -35,7 +35,7 @@
         "building_image": "https://admin.cy.anys.wizio.co.uk/uploads",
         "type": "Type B",
         "type_tag": "Villa",
-        "status": 1,
+        "status": 3,
         "project_id": "project-1",
         "project_name": "Living the Dream"
       },
@@ -65,7 +65,7 @@
         "building_image": "https://admin.cy.anys.wizio.co.uk/uploads",
         "type": "Type B",
         "type_tag": "Villa",
-        "status": 3,
+        "status": 1,
         "project_id": "project-1",
         "project_name": "Living the Dream"
       },
@@ -95,7 +95,7 @@
         "building_image": "https://admin.cy.anys.wizio.co.uk/uploads",
         "type": "Type B",
         "type_tag": "Villa",
-        "status": 2,
+        "status": 1,
         "project_id": "project-1",
         "project_name": "Living the Dream"
       },
@@ -179,13 +179,13 @@
         "flat_level": 0,
         "building_id": 6,
         "building_slug": "b_353C67",
-        "building_type_slug": "type_a",
+        "building_type_slug": "type_b",
         "building_name": "KA6",
         "building_class": "b_353C67",
         "building_image": "https://admin.cy.anys.wizio.co.uk/uploads",
         "type": "Type A",
         "type_tag": "Villa",
-        "status": 2,
+        "status": 3,
         "project_id": "project-1",
         "project_name": "Living the Dream"
       },

@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { SVGLoader } from "three/examples/jsm/loaders/SVGLoader.js";
 import projectData from "../APIdata.json";
-import { GUI } from "lil-gui";
+
 export default function PanoramaViewer({ panoramas }) {
   const containerRef = useRef(null);
   const textureCache = useRef({});
@@ -97,126 +97,131 @@ const buildHotspots = async (sceneData, unitsData = []) => {
   clickable.forEach((obj) => scene.remove(obj));
   clickable.length = 0;
 
-  // Load the single combined SVG (already aligned in Figma)
+  // Load SVG
   const svgData = await new Promise((resolve, reject) => {
     svgLoader.load(
-      "/assets/svg/mask.svg",
+      "/assets/svg/newMaskk.svg",
       (data) => resolve(data),
       undefined,
       (err) => reject(err)
     );
   });
 
-  console.log("✅ Loaded SVG:", svgData);
-
   // Group paths by <g id="...">
-  const allPaths = svgData.paths;
   const groupedById = {};
-  allPaths.forEach((path) => {
+  svgData.paths.forEach((path) => {
     const groupId = path.userData?.node?.parentNode?.id;
     if (!groupId) return;
     if (!groupedById[groupId]) groupedById[groupId] = [];
     groupedById[groupId].push(path);
   });
 
-  // Alignment parameters (will be controlled via lil-gui)
+  // 🎯 Fixed alignment (from your lil-GUI settings)
   const controls = {
-    latitude: -41.2,
-    longitude: 144.6,
-    radius: 215,
-    rotation: 109.2,
-    scale: 0.36,
+    latitude: 115.7,
+    longitude: 100.7,
+    radius: 416,
+    rotation: 79,
+    scale: 0.624,
+    offsetX: -329.6,
+    offsetY: -485.2,
+    offsetZ: 442,
+    rotationOffsetX: -76.8,
+    rotationOffsetY: 57.5,
+    rotationOffsetZ: -6,
   };
 
   let group = new THREE.Group();
   scene.add(group);
 
-  // Helper to rebuild the SVG group when parameters change
-  const rebuild = () => {
-    // Remove previous meshes
-    group.children.forEach((child) => group.remove(child));
+  // --- Build meshes ---
+  const phi = THREE.MathUtils.degToRad(90 - controls.latitude);
+  const theta = THREE.MathUtils.degToRad(controls.longitude);
+  const position = new THREE.Vector3(
+    controls.radius * Math.sin(phi) * Math.cos(theta),
+    controls.radius * Math.cos(phi),
+    controls.radius * Math.sin(phi) * Math.sin(theta)
+  );
 
-    const phi = THREE.MathUtils.degToRad(90 - controls.latitude);
-    const theta = THREE.MathUtils.degToRad(controls.longitude);
-    const position = new THREE.Vector3(
-      controls.radius * Math.sin(phi) * Math.cos(theta),
-      controls.radius * Math.cos(phi),
-      controls.radius * Math.sin(phi) * Math.sin(theta)
-    );
+  // Apply fine offsets
+  position.x += controls.offsetX;
+  position.y += controls.offsetY;
+  position.z += controls.offsetZ;
 
-    sceneData.buildings.forEach((b) => {
-      const unit = unitsData.find((u) => u.building_slug === b.svg);
-      if (!unit) return;
+  sceneData.buildings.forEach((b) => {
+    const unit = unitsData.find((u) => u.building_slug === b.svg);
+    if (!unit) return;
 
-      let fillColor = "#cccccc";
-      if (unit.status === 1) fillColor = "#4CAF50";
-      else if (unit.status === 2) fillColor = "#FFEB3B";
-      else if (unit.status === 3) fillColor = "#F44336";
+    // 🎨 Color logic
+    let fillColor = "#cccccc";
+    if ((unit.status === 1 || unit.status === 2) && unit.building_type_slug === "type_b")
+      fillColor = "#FFEB3B";
+    else if ((unit.status === 1 || unit.status === 2) && unit.building_type_slug === "type_a")
+      fillColor = "#2196F3";
+    else if (unit.status === 3)
+      fillColor = "#F44336";
 
-      const targetGroup = groupedById[b.svg];
-      if (!targetGroup) return;
+    const targetGroup = groupedById[b.svg];
+    if (!targetGroup) return;
 
-      targetGroup.forEach((path) => {
-        const shapes = SVGLoader.createShapes(path);
-        shapes.forEach((shape) => {
-          const geometry = new THREE.ShapeGeometry(shape);
-          const material = new THREE.MeshBasicMaterial({
-            color: new THREE.Color(fillColor),
-            transparent: true,
-            opacity: 0.8,
-            side: THREE.DoubleSide,
-            depthWrite: false,
-          });
-
-          const mesh = new THREE.Mesh(geometry, material);
-          mesh.scale.set(controls.scale, -controls.scale, controls.scale);
-          mesh.position.copy(position);
-          mesh.lookAt(0, 0, 0);
-          mesh.rotation.z = THREE.MathUtils.degToRad(controls.rotation);
-          mesh.renderOrder = 10;
-          mesh.userData = {
-            buildingSlug: b.svg,
-            nextPanorama: b.nextPanorama,
-            vr: unit.vr,
-          };
-
-          clickable.push(mesh);
-          group.add(mesh);
+    targetGroup.forEach((path) => {
+      const shapes = SVGLoader.createShapes(path);
+      shapes.forEach((shape) => {
+        const geometry = new THREE.ShapeGeometry(shape);
+        const material = new THREE.MeshBasicMaterial({
+          color: new THREE.Color(fillColor),
+          transparent: true,
+          opacity: 0.8,
+          side: THREE.DoubleSide,
+          depthWrite: false,
         });
+
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.scale.set(controls.scale, -controls.scale, controls.scale);
+        mesh.position.copy(position);
+        mesh.lookAt(0, 0, 0);
+
+        // Apply rotation offsets
+        mesh.rotation.x = THREE.MathUtils.degToRad(controls.rotationOffsetX);
+        mesh.rotation.y = THREE.MathUtils.degToRad(controls.rotationOffsetY);
+        mesh.rotation.z = THREE.MathUtils.degToRad(controls.rotation + controls.rotationOffsetZ);
+
+        mesh.renderOrder = 10;
+        mesh.userData = {
+          buildingSlug: b.svg,
+          nextPanorama: b.nextPanorama,
+          vr: unit.vr,
+        };
+
+        clickable.push(mesh);
+        group.add(mesh);
       });
     });
-  };
+  });
 
-  rebuild();
-
-  // 🧭 lil-GUI controls for live alignment
-  const gui = new GUI({ title: "SVG Alignment Controls" });
-  gui.add(controls, "latitude", -180, 180, 0.1).onChange(rebuild);
-  gui.add(controls, "longitude", -180, 180, 0.1).onChange(rebuild);
-  gui.add(controls, "rotation", -180, 180, 0.1).onChange(rebuild);
-  gui.add(controls, "radius", 100, 1000, 1).onChange(rebuild);
-  gui.add(controls, "scale", 0.1, 5, 0.01).onChange(rebuild);
-
-  console.log("✅ Added lil-GUI controls for alignment");
+  console.log("✅ SVG overlay built with locked alignment coordinates");
 };
 
 
 
  
-const switchPanorama = async (nextScene) => {
+const switchPanorama = async (nextScene, unitsData) => {
   if (!nextScene || isTransitioningRef.current) return;
   isTransitioningRef.current = true;
 
+  // Reset camera
   if (cameraRef.current) {
     cameraRef.current.position.set(0.6, 0.3, 0.1);
     cameraRef.current.updateProjectionMatrix?.();
   }
+
   if (controlsRef.current) {
     controlsRef.current.enabled = false;
     controlsRef.current.target.set(0, 0, 0);
     controlsRef.current.update();
   }
 
+  // Load panorama
   const nextTexture = await loadTexture(nextScene.image).catch(() => null);
   if (!nextTexture) {
     if (controlsRef.current) controlsRef.current.enabled = true;
@@ -231,54 +236,92 @@ const switchPanorama = async (nextScene) => {
   nextMesh.material.opacity = 0;
   nextMesh.material.needsUpdate = true;
 
-  // 🟣 Build next hotspots *before* transition — start invisible
-  const newHotspots = [];
-  const loader = loaderRef.current;
   const scene = sceneRef.current;
+  const clickable = clickableRef.current;
+  const newHotspots = [];
 
-  if (nextScene.buildings?.length) {
-    nextScene.buildings.forEach((b) => {
-      loader.load(
-        b.svg,
-        (svgTexture) => {
-          svgTexture.colorSpace = THREE.SRGBColorSpace;
-          const mat = new THREE.MeshBasicMaterial({
-            map: svgTexture,
+  const svgLoader = new SVGLoader();
+
+  // 🔹 Wait for SVG to load before starting fade
+  let svgData = null;
+  try {
+    svgData = await new Promise((resolve, reject) => {
+      svgLoader.load(
+        "/assets/svg/newMaskk.svg",
+        (data) => resolve(data),
+        undefined,
+        (err) => reject(err)
+      );
+    });
+  } catch (e) {
+    console.warn("SVG load failed:", e);
+  }
+
+  if (svgData && nextScene.buildings?.length) {
+    const groupedById = {};
+    svgData.paths.forEach((path) => {
+      const groupId = path.userData?.node?.parentNode?.id;
+      if (!groupId) return;
+      if (!groupedById[groupId]) groupedById[groupId] = [];
+      groupedById[groupId].push(path);
+    });
+
+    for (const b of nextScene.buildings) {
+      const unit = unitsData.find((u) => u.building_slug === b.svg);
+      if (!unit) continue;
+
+      // 🎨 Fill logic
+      let fillColor = "#cccccc";
+      if ((unit.status === 1 || unit.status === 2) && unit.building_type_slug === "type_b")
+        fillColor = "#FFEB3B"; // yellow
+      else if ((unit.status === 1 || unit.status === 2) && unit.building_type_slug === "type_a")
+        fillColor = "#2196F3"; // blue
+      else if (unit.status === 3)
+        fillColor = "#F44336"; // red
+
+      const targetGroup = groupedById[b.svg];
+      if (!targetGroup) continue;
+
+      targetGroup.forEach((path) => {
+        const shapes = SVGLoader.createShapes(path);
+        shapes.forEach((shape) => {
+          const geometry = new THREE.ShapeGeometry(shape);
+          const material = new THREE.MeshBasicMaterial({
+            color: new THREE.Color(fillColor),
             transparent: true,
-            opacity: 0, // start hidden
+            opacity: 0,
             side: THREE.DoubleSide,
             depthWrite: false,
           });
 
-          const plane = new THREE.Mesh(new THREE.PlaneGeometry(50, 50), mat);
-          const phi = THREE.MathUtils.degToRad(90 - b.latitude);
-          const theta = THREE.MathUtils.degToRad(b.longitude);
-          plane.position.set(
-            b.radius * Math.sin(phi) * Math.cos(theta),
-            b.radius * Math.cos(phi),
-            b.radius * Math.sin(phi) * Math.sin(theta)
+          const mesh = new THREE.Mesh(geometry, material);
+          // 🔧 Fixed global SVG alignment
+          mesh.scale.set(0.624, -0.624, 0.624);
+          mesh.position.set(-329.6, -485.2, 442);
+          mesh.lookAt(0, 0, 0);
+          mesh.rotation.set(
+            THREE.MathUtils.degToRad(-76.8),
+            THREE.MathUtils.degToRad(57.5),
+            THREE.MathUtils.degToRad(79 - 6)
           );
-          plane.lookAt(0, 0, 0);
-          plane.rotation.z = THREE.MathUtils.degToRad(b.rotation);
 
-          const aspect =
-            plane.material.map.image?.width /
-              plane.material.map.image?.height || 1;
-          plane.geometry.dispose();
-          plane.geometry = new THREE.PlaneGeometry(b.size * aspect, b.size);
-          plane.userData = { nextPanorama: b.nextPanorama };
-          plane.renderOrder = 1;
+          mesh.renderOrder = 10;
+          mesh.userData = {
+            buildingSlug: b.svg,
+            nextPanorama: b.nextPanorama,
+            vr: unit.vr,
+          };
 
-          scene.add(plane);
-          newHotspots.push(plane);
-        },
-        undefined,
-        (err) => console.error("Error loading SVG:", err)
-      );
-    });
+          newHotspots.push(mesh);
+          scene.add(mesh);
+        });
+      });
+    }
   }
 
-  const clickable = clickableRef.current;
+  // 🟢 Delay fade until all SVGs are ready
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+
   let opacity = 0;
   const speed = 0.02;
 
@@ -290,7 +333,6 @@ const switchPanorama = async (nextScene) => {
       nextMesh.material.opacity = opacity;
       currentMesh.material.opacity = 1 - opacity;
 
-      // 🟣 Fade out old hotspots + fade in new ones simultaneously
       clickable.forEach((obj) => {
         obj.material.opacity = 1 - opacity;
         obj.material.needsUpdate = true;
@@ -300,24 +342,24 @@ const switchPanorama = async (nextScene) => {
         obj.material.needsUpdate = true;
       });
 
-      if (opacity < 1) {
-        requestAnimationFrame(animateFade);
-      } else {
-        resolve();
-      }
+      if (opacity < 1) requestAnimationFrame(animateFade);
+      else resolve();
     };
     animateFade();
   });
 
-  // 🟣 Cleanup and finalize
-  clickable.forEach((obj) => scene.remove(obj));
+  // 🧹 Remove old SVGs safely
+  clickable.forEach((obj) => {
+    if (obj.parent) obj.parent.remove(obj);
+  });
   clickable.length = 0;
   clickable.push(...newHotspots);
 
   setUsingMesh1(!usingMesh1);
+  setCurrentScene(nextScene);
+
   currentMesh.material.opacity = 0;
   nextMesh.material.opacity = 1;
-  setCurrentScene(nextScene);
 
   if (cameraRef.current) cameraRef.current.position.set(0.6, 0.3, 0.1);
   if (controlsRef.current) {
@@ -448,12 +490,12 @@ const onWheel = (event) => {
       if (intersects.length > 0) {
         const obj = intersects[0].object;
         if (hoveredObject !== obj) {
-          if (hoveredObject) hoveredObject.material.opacity = 1.0;
+          if (hoveredObject) hoveredObject.material.opacity = 0.6;
           hoveredObject = obj;
           hoveredObject.material.opacity = 0.2;
         }
       } else {
-        if (hoveredObject) hoveredObject.material.opacity = 1;
+        if (hoveredObject) hoveredObject.material.opacity = 0.6;
         hoveredObject = null;
       }
     };
@@ -469,10 +511,11 @@ const onWheel = (event) => {
       const next = panoramas.find(
         (p) => p.id === intersects[0].object.userData.nextPanorama
       );
-      if (next) {
-        setHistory((h) => [...h, currentScene]);
-        switchPanorama(next);
-      }
+    if (next) {
+  setHistory((h) => [...h, JSON.parse(JSON.stringify(currentScene))]);
+  switchPanorama(next, projectData[0].units);
+}
+
     };
     canvas.addEventListener("click", onClick);
 
@@ -504,12 +547,15 @@ const onWheel = (event) => {
     };
   }, [isReady]);
 
-  const goBack = () => {
-    if (history.length === 0) return;
-    const prev = history[history.length - 1];
-    setHistory((h) => h.slice(0, -1));
-    switchPanorama(prev);
-  };
+const goBack = async () => {
+  if (history.length === 0) return;
+  const prev = history[history.length - 1];
+  setHistory((h) => h.slice(0, -1));
+
+  await switchPanorama(prev, projectData[0].units);
+  buildHotspots(prev, projectData[0].units);
+};
+
 
   if (!isReady) {
     return (
