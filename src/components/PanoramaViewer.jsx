@@ -489,12 +489,12 @@ const onWheel = (event) => {
       if (intersects.length > 0) {
         const obj = intersects[0].object;
         if (hoveredObject !== obj) {
-          if (hoveredObject) hoveredObject.material.opacity = 0.6;
+          if (hoveredObject) hoveredObject.material.opacity = 0.4;
           hoveredObject = obj;
           hoveredObject.material.opacity = 0.2;
         }
       } else {
-        if (hoveredObject) hoveredObject.material.opacity = 0.6;
+        if (hoveredObject) hoveredObject.material.opacity = 0.4;
         hoveredObject = null;
       }
     };
