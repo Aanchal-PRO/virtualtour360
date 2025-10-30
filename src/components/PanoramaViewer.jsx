@@ -4,6 +4,8 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { SVGLoader } from "three/examples/jsm/loaders/SVGLoader.js";
 import projectData from "../APIdata.json";
 
+import GUI from "lil-gui";
+
 export default function PanoramaViewer({ panoramas }) {
   const containerRef = useRef(null);
   const textureCache = useRef({});
@@ -88,6 +90,7 @@ export default function PanoramaViewer({ panoramas }) {
       }
     });
 
+
 const buildHotspots = async (sceneData, unitsData = []) => {
   const scene = sceneRef.current;
   const clickable = clickableRef.current;
@@ -100,38 +103,37 @@ const buildHotspots = async (sceneData, unitsData = []) => {
   // Load SVG
   const svgData = await new Promise((resolve, reject) => {
     svgLoader.load(
-      "/assets/svg/newMaskk.svg",
+      "/assets/svg/units.svg",
       (data) => resolve(data),
       undefined,
       (err) => reject(err)
     );
   });
 
-  // Group paths by <g id="...">
-  const groupedById = {};
+  // Map paths directly by their ID
+  const pathsById = {};
   svgData.paths.forEach((path) => {
-    const groupId = path.userData?.node?.parentNode?.id;
-    if (!groupId) return;
-    if (!groupedById[groupId]) groupedById[groupId] = [];
-    groupedById[groupId].push(path);
+    const id = path.userData?.node?.id;
+    if (id) pathsById[id] = path;
   });
 
-  // 🎯 Fixed alignment (from your lil-GUI settings)
+  // 🔒 Locked alignment from your tuned GUI values
   const controls = {
-    latitude: 115.7,
-    longitude: 100.7,
-    radius: 416,
-    rotation: 79,
-    scale: 0.624,
-    offsetX: -329.6,
-    offsetY: -485.2,
-    offsetZ: 442,
-    rotationOffsetX: -76.8,
-    rotationOffsetY: 57.5,
-    rotationOffsetZ: -6,
+    latitude: 109.3,
+    longitude: 62,
+    radius: 628,
+    rotation: 117.5,
+    scale: 0.49,
+    offsetX: -140.7,
+    offsetY: -640.8,
+    offsetZ: 390.2,
+    rotationOffsetX: -76.2,
+    rotationOffsetY: 60.5,
+    rotationOffsetZ: -42,
+    opacity: 0.37,
   };
 
-  let group = new THREE.Group();
+  const group = new THREE.Group();
   scene.add(group);
 
   // --- Build meshes ---
@@ -161,47 +163,44 @@ const buildHotspots = async (sceneData, unitsData = []) => {
     else if (unit.status === 3)
       fillColor = "#F44336";
 
-    const targetGroup = groupedById[b.svg];
-    if (!targetGroup) return;
+    const path = pathsById[b.svg];
+    if (!path) return;
 
-    targetGroup.forEach((path) => {
-      const shapes = SVGLoader.createShapes(path);
-      shapes.forEach((shape) => {
-        const geometry = new THREE.ShapeGeometry(shape);
-        const material = new THREE.MeshBasicMaterial({
-          color: new THREE.Color(fillColor),
-          transparent: true,
-          opacity: 0.8,
-          side: THREE.DoubleSide,
-          depthWrite: false,
-        });
-
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.scale.set(controls.scale, -controls.scale, controls.scale);
-        mesh.position.copy(position);
-        mesh.lookAt(0, 0, 0);
-
-        // Apply rotation offsets
-        mesh.rotation.x = THREE.MathUtils.degToRad(controls.rotationOffsetX);
-        mesh.rotation.y = THREE.MathUtils.degToRad(controls.rotationOffsetY);
-        mesh.rotation.z = THREE.MathUtils.degToRad(controls.rotation + controls.rotationOffsetZ);
-
-        mesh.renderOrder = 10;
-        mesh.userData = {
-          buildingSlug: b.svg,
-          nextPanorama: b.nextPanorama,
-          vr: unit.vr,
-        };
-
-        clickable.push(mesh);
-        group.add(mesh);
+    const shapes = SVGLoader.createShapes(path);
+    shapes.forEach((shape) => {
+      const geometry = new THREE.ShapeGeometry(shape);
+      const material = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(fillColor),
+        transparent: true,
+        opacity: controls.opacity,
+        side: THREE.DoubleSide,
+        depthWrite: false,
       });
+
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.scale.set(controls.scale, -controls.scale, controls.scale);
+      mesh.position.copy(position);
+      mesh.lookAt(0, 0, 0);
+
+      // Apply rotation offsets
+      mesh.rotation.x = THREE.MathUtils.degToRad(controls.rotationOffsetX);
+      mesh.rotation.y = THREE.MathUtils.degToRad(controls.rotationOffsetY);
+      mesh.rotation.z = THREE.MathUtils.degToRad(controls.rotation + controls.rotationOffsetZ);
+
+      mesh.renderOrder = 10;
+      mesh.userData = {
+        buildingSlug: b.svg,
+        nextPanorama: b.nextPanorama,
+        vr: unit.vr,
+      };
+
+      clickable.push(mesh);
+      group.add(mesh);
     });
   });
 
-  console.log("✅ SVG overlay built with locked alignment coordinates");
+  console.log("✅ SVG overlay loaded with locked alignment coordinates");
 };
-
 
 
  
