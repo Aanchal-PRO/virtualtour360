@@ -4,8 +4,6 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { SVGLoader } from "three/examples/jsm/loaders/SVGLoader.js";
 import projectData from "../APIdata.json";
 
-import GUI from "lil-gui";
-
 export default function PanoramaViewer({ panoramas }) {
   const containerRef = useRef(null);
   const textureCache = useRef({});
