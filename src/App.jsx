@@ -340,45 +340,72 @@ const panoramas = [
     {
         id: "house66",
         svg: "b_658695",
-        nextPanorama: "scene3"
+        nextPanorama: "scene4"
     },
     {
         id: "house67",
         svg: "b_718613",
-        nextPanorama: "scene3"
+        nextPanorama: "scene4"
     },
     {
         id: "house68",
         svg: "b_887755",
-        nextPanorama: "scene3"
+        nextPanorama: "scene4"
     },
     {
         id: "house69",
         svg: "b_4F2E4F",
-        nextPanorama: "scene3"
+        nextPanorama: "scene4"
     },
     {
         id: "house70",
         svg: "b_7E4678",
-        nextPanorama: "scene3"
+        nextPanorama: "scene4"
     },
     {
         id: "house71",
         svg: "b_707B6B",
-        nextPanorama: "scene3"
+        nextPanorama: "scene4"
     },
     {
         id: "house72",
         svg: "b_602540",
-        nextPanorama: "scene3"
+        nextPanorama: "scene4"
     },
     {
         id: "house73",
         svg: "b_3F8491",
-        nextPanorama: "scene3"
+        nextPanorama: "scene4"
     }
 
 ],
+amenities: [
+      {
+        id: "amenity-1",
+       name: "Piza Hut",
+        location: "-12.2, 24.1",
+       category: "Restaurants"
+      },
+      {
+        id: "amenity-2",
+       name: "Theta Mediterranean restaurant",
+        location: "-15.7, -0.199999999999989",
+       category: "beach"
+      },
+      {
+        id: "amenity-3",
+       name: "Nero caffe Macenzie beach",
+        location: "-13.9, -142.2",
+       category: "shopping"
+      },
+      {
+        id: "amenity-4",
+       name: "Jackson Gastro Cafe Bar",
+        location: "-31.3, -173.4",
+       category: "transport"
+      },
+
+    ]
 
   },
   {
