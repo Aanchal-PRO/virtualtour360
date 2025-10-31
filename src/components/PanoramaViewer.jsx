@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { SVGLoader } from "three/examples/jsm/loaders/SVGLoader.js";
 import projectData from "../APIdata.json";
-
+// import { GUI } from "lil-gui";
 export default function PanoramaViewer({ panoramas }) {
   const containerRef = useRef(null);
   const textureCache = useRef({});
@@ -94,7 +94,7 @@ const buildHotspots = async (sceneData, unitsData = []) => {
   const clickable = clickableRef.current;
   const svgLoader = new SVGLoader();
 
-  // Clear old clickable meshes
+  // Clear old meshes
   clickable.forEach((obj) => scene.remove(obj));
   clickable.length = 0;
 
@@ -108,99 +108,132 @@ const buildHotspots = async (sceneData, unitsData = []) => {
     );
   });
 
-  // Map paths directly by their ID
+  // Map paths by their IDs
   const pathsById = {};
   svgData.paths.forEach((path) => {
     const id = path.userData?.node?.id;
     if (id) pathsById[id] = path;
   });
 
-  // 🔒 Locked alignment from your tuned GUI values
+  // 🧭 Controls: spherical positioning + natural rotation
   const controls = {
     latitude: 109.3,
     longitude: 62,
     radius: 628,
-    rotation: 117.5,
     scale: 0.49,
     offsetX: -140.7,
     offsetY: -640.8,
     offsetZ: 390.2,
-    rotationOffsetX: -76.2,
-    rotationOffsetY: 60.5,
-    rotationOffsetZ: -42,
+    yaw: 0,    // Horizontal rotation around Y axis
+    pitch: 0,  // Vertical tilt around X axis
+    roll: 0,   // Rotation around Z axis
     opacity: 0.37,
   };
 
   const group = new THREE.Group();
   scene.add(group);
 
-  // --- Build meshes ---
-  const phi = THREE.MathUtils.degToRad(90 - controls.latitude);
-  const theta = THREE.MathUtils.degToRad(controls.longitude);
-  const position = new THREE.Vector3(
-    controls.radius * Math.sin(phi) * Math.cos(theta),
-    controls.radius * Math.cos(phi),
-    controls.radius * Math.sin(phi) * Math.sin(theta)
-  );
+  // --- Function to rebuild meshes dynamically ---
+  const rebuildMeshes = () => {
+    while (group.children.length > 0) group.remove(group.children[0]);
+    clickable.length = 0;
 
-  // Apply fine offsets
-  position.x += controls.offsetX;
-  position.y += controls.offsetY;
-  position.z += controls.offsetZ;
+    // Compute spherical position
+    const phi = THREE.MathUtils.degToRad(90 - controls.latitude);
+    const theta = THREE.MathUtils.degToRad(controls.longitude);
+    const basePosition = new THREE.Vector3(
+      controls.radius * Math.sin(phi) * Math.cos(theta),
+      controls.radius * Math.cos(phi),
+      controls.radius * Math.sin(phi) * Math.sin(theta)
+    );
 
-  sceneData.buildings.forEach((b) => {
-    const unit = unitsData.find((u) => u.building_slug === b.svg);
-    if (!unit) return;
+    basePosition.x += controls.offsetX;
+    basePosition.y += controls.offsetY;
+    basePosition.z += controls.offsetZ;
 
-    // 🎨 Color logic
-    let fillColor = "#cccccc";
-    if ((unit.status === 1 || unit.status === 2) && unit.building_type_slug === "type_b")
-      fillColor = "#FFEB3B";
-    else if ((unit.status === 1 || unit.status === 2) && unit.building_type_slug === "type_a")
-      fillColor = "#2196F3";
-    else if (unit.status === 3)
-      fillColor = "#F44336";
+    // Create a rotation quaternion based on yaw/pitch/roll
+    const euler = new THREE.Euler(
+      THREE.MathUtils.degToRad(controls.pitch),
+      THREE.MathUtils.degToRad(controls.yaw),
+      THREE.MathUtils.degToRad(controls.roll),
+      "YXZ"
+    );
+    const rotationQuat = new THREE.Quaternion().setFromEuler(euler);
 
-    const path = pathsById[b.svg];
-    if (!path) return;
+    // Build each building mesh
+    sceneData.buildings.forEach((b) => {
+      const unit = unitsData.find((u) => u.building_slug === b.svg);
+      if (!unit) return;
 
-    const shapes = SVGLoader.createShapes(path);
-    shapes.forEach((shape) => {
-      const geometry = new THREE.ShapeGeometry(shape);
-      const material = new THREE.MeshBasicMaterial({
-        color: new THREE.Color(fillColor),
-        transparent: true,
-        opacity: controls.opacity,
-        side: THREE.DoubleSide,
-        depthWrite: false,
+      // 🎨 Color logic
+      let fillColor = "#cccccc";
+      if ((unit.status === 1 || unit.status === 2) && unit.building_type_slug === "type_b")
+        fillColor = "#FFEB3B";
+      else if ((unit.status === 1 || unit.status === 2) && unit.building_type_slug === "type_a")
+        fillColor = "#2196F3";
+      else if (unit.status === 3)
+        fillColor = "#F44336";
+
+      const path = pathsById[b.svg];
+      if (!path) return;
+
+      const shapes = SVGLoader.createShapes(path);
+      shapes.forEach((shape) => {
+        const geometry = new THREE.ShapeGeometry(shape);
+        const material = new THREE.MeshBasicMaterial({
+          color: new THREE.Color(fillColor),
+          transparent: true,
+          opacity: controls.opacity,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        });
+
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.scale.set(controls.scale, -controls.scale, controls.scale);
+
+        mesh.position.copy(basePosition);
+        mesh.lookAt(0, 0, 0);
+        mesh.quaternion.multiply(rotationQuat); // ✅ Apply correct orientation
+
+        mesh.renderOrder = 10;
+        mesh.userData = {
+          buildingSlug: b.svg,
+          nextPanorama: b.nextPanorama,
+          vr: unit.vr,
+        };
+
+        clickable.push(mesh);
+        group.add(mesh);
       });
-
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.scale.set(controls.scale, -controls.scale, controls.scale);
-      mesh.position.copy(position);
-      mesh.lookAt(0, 0, 0);
-
-      // Apply rotation offsets
-      mesh.rotation.x = THREE.MathUtils.degToRad(controls.rotationOffsetX);
-      mesh.rotation.y = THREE.MathUtils.degToRad(controls.rotationOffsetY);
-      mesh.rotation.z = THREE.MathUtils.degToRad(controls.rotation + controls.rotationOffsetZ);
-
-      mesh.renderOrder = 10;
-      mesh.userData = {
-        buildingSlug: b.svg,
-        nextPanorama: b.nextPanorama,
-        vr: unit.vr,
-      };
-
-      clickable.push(mesh);
-      group.add(mesh);
     });
-  });
+  };
 
-  console.log("✅ SVG overlay loaded with locked alignment coordinates");
+  rebuildMeshes();
+
+  // --- lil-gui for interactive fine-tuning ---
+  const gui = new GUI({ title: "SVG Panorama Alignment" });
+
+  const posFolder = gui.addFolder("Position / Spherical");
+  posFolder.add(controls, "latitude", 0, 180, 0.1).onChange(rebuildMeshes);
+  posFolder.add(controls, "longitude", 0, 360, 0.1).onChange(rebuildMeshes);
+  posFolder.add(controls, "radius", 0, 2000, 1).onChange(rebuildMeshes);
+  posFolder.add(controls, "offsetX", -1000, 1000, 0.1).onChange(rebuildMeshes);
+  posFolder.add(controls, "offsetY", -1000, 1000, 0.1).onChange(rebuildMeshes);
+  posFolder.add(controls, "offsetZ", -1000, 1000, 0.1).onChange(rebuildMeshes);
+
+  const rotFolder = gui.addFolder("Rotation (Natural)");
+  rotFolder.add(controls, "yaw", -180, 180, 0.1).onChange(rebuildMeshes);   // horizontal rotation
+  rotFolder.add(controls, "pitch", -180, 180, 0.1).onChange(rebuildMeshes); // vertical tilt
+  rotFolder.add(controls, "roll", -180, 180, 0.1).onChange(rebuildMeshes);  // twist
+
+  const miscFolder = gui.addFolder("Other");
+  miscFolder.add(controls, "scale", 0.01, 5, 0.01).onChange(rebuildMeshes);
+  miscFolder.add(controls, "opacity", 0.1, 1, 0.01).onChange(rebuildMeshes);
+
+  gui.close();
+
+  console.log("✅ Improved spherical rotation alignment active");
 };
-
-
  
 const switchPanorama = async (nextScene, unitsData) => {
   if (!nextScene || isTransitioningRef.current) return;
